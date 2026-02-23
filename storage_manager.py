@@ -1,5 +1,4 @@
 import os
-import sqlite3
 import cv2
 from datetime import datetime
 
@@ -13,24 +12,9 @@ class StorageManager:
         os.makedirs(self.SAVE_DIR, exist_ok=True)
         os.makedirs(self.IMG_DIR, exist_ok=True)
         
-        self.DB_PATH = os.path.join(self.SAVE_DIR, "violations.db")
-        self.conn = sqlite3.connect(self.DB_PATH, check_same_thread=False)
-        self.cur = self.conn.cursor()
-        self._create_table()
         self.saved_snaps = set()
 
-    def _create_table(self):
-        self.cur.execute("""
-        CREATE TABLE IF NOT EXISTS violations (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            track_id INTEGER,
-            violation_type TEXT,
-            lane INTEGER,
-            timestamp TEXT,
-            image_path TEXT
-        )
-        """)
-        self.conn.commit()
+
 
     def save_snapshot(self, frame, track_id, violation_type, lane_num=None, bbox=None):
         key = (int(track_id), str(violation_type))
@@ -56,14 +40,5 @@ class StorageManager:
         filename = os.path.join(self.IMG_DIR, f"{safe_name}_id{track_id}_{now_dt.strftime('%Y%m%d_%H%M%S')}.jpg")
         cv2.imwrite(filename, overlay)
 
-        self.cur.execute(
-            "INSERT INTO violations(track_id, violation_type, lane, timestamp, image_path) VALUES (?,?,?,?,?)",
-            (int(track_id), str(violation_type), int(lane_num) if lane_num is not None else None, ts_str, filename)
-        )
-        self.conn.commit()
         
-        # إرسال تنبيه للجهات المعنية (Alert the authority)
-        print(f"[ALERT] Authority Notified: {violation_type} by Vehicle ID {track_id} at {ts_str}")
-
-    def close(self):
-        self.conn.close()
+        print(f"[LOG] Authority Notified: {violation_type} by Vehicle ID {track_id} at {ts_str}")
