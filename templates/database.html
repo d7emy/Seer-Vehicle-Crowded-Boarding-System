@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Violation Database</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; background-color: #1e1e2f; color: #ffffff; margin: 0; padding: 0; }
+        .header { background-color: #2a2a40; padding: 20px 0; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        .header h1 { margin: 0; font-size: 24px; }
+        .nav-links { margin-top: 15px; }
+        .nav-links a { color: #aaa; text-decoration: none; margin: 0 15px; font-size: 16px; padding: 5px 10px; border-radius: 5px; transition: 0.3s; }
+        .nav-links a:hover, .nav-links a.active { color: #fff; background-color: #3a3a5c; }
+        
+        .container { width: 95%; max-width: 1400px; margin: 30px auto; background: #2a2a40; padding: 20px; border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        
+        /* Action Bar */
+        .action-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .delete-btn { background-color: #ff4757; color: #fff; border: none; padding: 10px 15px; border-radius: 5px; cursor: pointer; font-size: 15px; font-weight: bold; transition: 0.2s; }
+        .delete-btn:hover { background-color: #ff6b81; }
+        .delete-btn:disabled { background-color: #555; cursor: not-allowed; color: #888; }
+
+        table { width: 100%; border-collapse: collapse; text-align: left; }
+        th, td { padding: 15px; border-bottom: 1px solid #3a3a5c; }
+        th { background-color: #1e1e2f; color: #ff4757; font-weight: bold; }
+        tr:hover { background-color: #3a3a5c; }
+        
+        .view-btn { background-color: #2e86de; color: #fff; padding: 8px 12px; text-decoration: none; border-radius: 5px; font-size: 14px; transition: 0.2s; }
+        .view-btn:hover { background-color: #54a0ff; }
+        
+        input[type="checkbox"] { transform: scale(1.3); cursor: pointer; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1>Seer-Vehicle Crowded Boarding System</h1>
+        <div class="nav-links">
+            <a href="/">Live Stream</a>
+            <a href="/database" class="active">Violation Database</a>
+            <a href="/laner">Lane Builder</a>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="action-bar">
+            <h2>Recorded Violations History</h2>
+            <button id="deleteBtn" class="delete-btn" disabled>Delete Selected</button>
+        </div>
+        
+        <table>
+            <thead>
+                <tr>
+                    <th><input type="checkbox" id="selectAll"></th>
+                    <th>Timestamp</th>
+                    <th>Vehicle ID</th>
+                    <th>Violation Type</th>
+                    <th>Lane</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for v in violations %}
+                <tr>
+                    <td><input type="checkbox" class="row-checkbox" value="{{ v['base_filename'] }}"></td>
+                    <td>{{ v.get('Timestamp', 'N/A') }}</td>
+                    <td>{{ v.get('Vehicle ID', 'N/A')[:8] }}</td> 
+                    <td>{{ v.get('Violation Type', 'N/A') }}</td>
+                    <td>{{ v.get('Lane', 'N/A') }}</td>
+                    <td><a href="/violation/{{ v['base_filename'] }}" class="view-btn" target="_blank">View Details</a></td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="6" style="text-align: center; color: #aaa; padding: 30px;">No violations recorded yet. Let the stream run!</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        const selectAllCb = document.getElementById('selectAll');
+        const rowCbs = document.querySelectorAll('.row-checkbox');
+        const deleteBtn = document.getElementById('deleteBtn');
+
+        // Function to enable/disable the delete button
+        function updateDeleteButton() {
+            const anyChecked = Array.from(rowCbs).some(cb => cb.checked);
+            deleteBtn.disabled = !anyChecked;
+        }
+
+        // Handle "Select All" checkbox
+        if(selectAllCb) {
+            selectAllCb.addEventListener('change', function(e) {
+                rowCbs.forEach(cb => cb.checked = e.target.checked);
+                updateDeleteButton();
+            });
+        }
+
+        // Handle individual row checkboxes
+        rowCbs.forEach(cb => {
+            cb.addEventListener('change', function() {
+                // Uncheck 'Select All' if a row is unchecked
+                if (!this.checked) selectAllCb.checked = false;
+                
+                // Check 'Select All' if every row is manually checked
+                if (Array.from(rowCbs).every(c => c.checked)) selectAllCb.checked = true;
+                
+                updateDeleteButton();
+            });
+        });
+
+        // Handle the Delete Button click
+        deleteBtn.addEventListener('click', function() {
+            const selected = Array.from(rowCbs)
+                                  .filter(cb => cb.checked)
+                                  .map(cb => cb.value);
+            
+            if (confirm(`Are you sure you want to permanently delete ${selected.length} record(s)? This will delete the images too.`)) {
+                
+                // Send a POST request to Flask
+                fetch('/delete_violations', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filenames: selected })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Refresh the page to show the updated table
+                        window.location.reload();
+                    } else {
+                        alert("An error occurred while deleting files.");
+                    }
+                })
+                .catch(err => console.error(err));
+            }
+        });
+    </script>
+</body>
+</html>

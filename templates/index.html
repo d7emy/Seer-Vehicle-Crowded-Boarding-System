@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Seer-Vehicle System</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #1e1e2f; color: #ffffff; margin: 0; padding: 0; }
+        .header { background-color: #2a2a40; padding: 20px 0; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        .header h1 { margin: 0; font-size: 24px; }
+        
+        /* Two-column Layout */
+        .dashboard { display: flex; width: 95%; max-width: 1600px; margin: 30px auto; gap: 20px; }
+        
+        /* Left Side: Video */
+        .video-section { flex: 7; /* Takes up 70% of the space */ }
+        .video-container { border: 4px solid #3a3a5c; border-radius: 10px; overflow: hidden; background-color: #000; }
+        .video-container img { width: 100%; height: auto; display: block; }
+        
+        /* Right Side: List */
+        .list-section { flex: 3; /* Takes up 30% of the space */ background: #2a2a40; border-radius: 10px; border: 4px solid #3a3a5c; padding: 15px; height: calc(100vh - 200px); overflow-y: auto; }
+        .list-section h2 { margin-top: 0; border-bottom: 2px solid #4a4a6c; padding-bottom: 10px; font-size: 18px;}
+        
+        /* Violation Items */
+        .violation-item { background: #3a3a5c; margin-bottom: 15px; padding: 12px; border-radius: 6px; cursor: pointer; display: block; text-decoration: none; color: white; border-left: 5px solid #ff4757; transition: background 0.2s; }
+        .violation-item:hover { background: #4a4a6c; }
+        .v-title { color: #ff4757; font-weight: bold; margin-bottom: 5px; font-size: 16px;}
+        .v-details { font-size: 13px; color: #aaa; }
+
+        .nav-links { margin-top: 15px; }
+        .nav-links a { color: #aaa; text-decoration: none; margin: 0 15px; font-size: 16px; padding: 5px 10px; border-radius: 5px; transition: 0.3s; }
+        .nav-links a:hover, .nav-links a.active { color: #fff; background-color: #3a3a5c; }
+    </style>
+</head>
+<body>
+
+<div class="header">
+        <h1>Seer-Vehicle Crowded Boarding System</h1>
+        <div class="nav-links">
+            <a href="/" class="active">Live Stream</a>
+            <a href="/database">Violation Database</a>
+            <a href="/laner">Lane Builder</a>
+        </div>
+    </div>
+
+    <div class="dashboard">
+        <div class="video-section">
+            <div class="video-container">
+                <img src="{{ url_for('video_feed') }}" alt="Live Traffic Feed">
+            </div>
+        </div>
+
+        <div class="list-section">
+            <h2>Live Violation Alerts</h2>
+            <div id="violation-list">
+                </div>
+        </div>
+    </div>
+
+<script>
+        const eventSource = new EventSource("/stream_violations");
+        
+        eventSource.onmessage = function(event) {
+            console.log("Alert Received from Python:", event.data); // Debugging line
+            
+            const data = JSON.parse(event.data);
+            const list = document.getElementById("violation-list");
+            
+            const item = document.createElement("a");
+            item.className = "violation-item";
+            item.href = "/violation/" + data.base_filename;
+            item.target = "_blank"; 
+            
+            const shortId = data.id.substring(0, 8);
+            
+            item.innerHTML = `
+                <div class="v-title">${data.type}</div>
+                <div class="v-details">Vehicle ID: ${shortId} <br> Time: ${data.timestamp}</div>
+            `;
+            
+            list.prepend(item);
+        };
+    </script>
+</body>
+</html>

@@ -1,12 +1,15 @@
 import cv2
 import numpy as np
+import json
+import os
 
 class ViolationEngine:
     def __init__(self, storage_manager):
         self.storage = storage_manager
         
-
-        self.all_lanes = [np.array([[648, 275], [523, 269], [548, 296], [567, 319], [576, 355], [561, 446], [542, 538], [520, 648], [505, 717], [660, 718]], np.int32),np.array([[648, 180], [662, 719], [836, 717], [806, 588], [764, 437], [740, 344], [723, 283], [697, 183]], np.int32),np.array([[699, 184], [837, 713], [1016, 719], [746, 183]], np.int32),np.array([[749, 182], [1017, 715], [1197, 718], [881, 291], [799, 184]], np.int32),]
+        # New: Read lanes from a JSON configuration file
+        self.config_file = "lanes_config.json"
+        self.all_lanes = []
         self.lane_masks = []
         self.masks_initialized = False
 
@@ -15,18 +18,42 @@ class ViolationEngine:
         self.STALL_SPEED_KMH = 3
         self.LANE_CHANGE_PAIRS = {(0, 1), (1, 0)}
 
+        # Load the lanes immediately on startup
+        self.load_lanes()
+        self._reset_tracking_memory()
+
+    def _reset_tracking_memory(self):
         self.car_last_lane = {}
         self.car_stop_start = {}
         self.lane_leader = {0: {"id": None, "start_time": None}}
         self.cars_entered = set()
         self.lane_change_violators = set()
         self.stopped_violators = set()
-        
         self.snapped_lane_change = set()
         self.snapped_stopped = set()
         self.snapped_l1_dwell = set()
 
+    def load_lanes(self):
+        """Loads lane coordinates from JSON. Called on startup and when updated via Web UI."""
+        if os.path.exists(self.config_file):
+            try:
+                with open(self.config_file, 'r') as f:
+                    lanes_data = json.load(f)
+                    # Convert standard JSON lists back into OpenCV numpy arrays
+                    self.all_lanes = [np.array(lane, np.int32) for lane in lanes_data]
+            except Exception as e:
+                print(f"Error loading lanes: {e}")
+                self.all_lanes = []
+        else:
+            self.all_lanes = []
+            
+        # Force the engine to redraw the internal masks on the next frame
+        self.masks_initialized = False 
+        self._reset_tracking_memory()
+        print(f"[ENGINE] Successfully loaded {len(self.all_lanes)} lanes from config.")
+
     def _init_masks(self, h, w):
+        self.lane_masks = []
         for lane in self.all_lanes:
             mask = np.zeros((h, w), dtype=np.uint8)
             cv2.fillPoly(mask, [lane], 255)
@@ -35,12 +62,15 @@ class ViolationEngine:
 
     def process_and_draw(self, frame, tracked_objects, current_time):
         h, w = frame.shape[:2]
+        
+        # Will re-initialize automatically if lanes were updated from the web UI
         if not self.masks_initialized:
             self._init_masks(h, w)
 
         for i, lane in enumerate(self.all_lanes):
-            cv2.polylines(frame, [lane], isClosed=True, color=(255, 255, 0), thickness=2)
-            cv2.putText(frame, f"Lane {i+1}", tuple(lane[0]), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
+            if len(lane) >= 3: # Safety check
+                cv2.polylines(frame, [lane], isClosed=True, color=(255, 255, 0), thickness=2)
+                cv2.putText(frame, f"Lane {i+1}", tuple(lane[0]), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
 
         cars_in_lane = {i: [] for i in range(len(self.all_lanes))}
 
@@ -89,7 +119,7 @@ class ViolationEngine:
                     if track_id in self.car_stop_start:
                         del self.car_stop_start[track_id]
 
-        if not cars_in_lane[0]:
+        if not cars_in_lane.get(0):
             self.lane_leader[0] = {"id": None, "start_time": None}
         else:
             leader = max(cars_in_lane[0], key=lambda d: d["cy"])
@@ -118,7 +148,6 @@ class ViolationEngine:
                             self.storage.save_snapshot(frame, track_id, "EXCESSIVE WAITING TIME", 1, (x1, y1, x2, y2))
                     else:
                         color = (0, 255, 0)
-                        # العداد التنازلي يطبع على الشاشة قبل انتهاء الوقت
                         time_left = max(0, self.DWELL_LIMIT_SEC - elapsed)
                         label = f"L1 LEADER (Timer: {time_left:.1f}s) | {speed_str}"
                 else:
@@ -128,6 +157,8 @@ class ViolationEngine:
                 color, label = (100, 100, 100), f"EXITED | {speed_str}"
 
             cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-            cv2.putText(frame, label, (x1, max(15, y1 - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+            # Display ID up to 8 chars
+            short_id = str(track_id)[:8] if track_id else ""
+            cv2.putText(frame, f"{label} ID:{short_id}", (x1, max(15, y1 - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
         return frame

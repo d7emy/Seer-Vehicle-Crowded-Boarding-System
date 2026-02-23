@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lane Builder Tool</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; background-color: #1e1e2f; color: #ffffff; margin: 0; padding: 0; }
+        .header { background-color: #2a2a40; padding: 20px 0; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        .header h1 { margin: 0; font-size: 24px; }
+        .nav-links { margin-top: 15px; }
+        .nav-links a { color: #aaa; text-decoration: none; margin: 0 15px; font-size: 16px; padding: 5px 10px; border-radius: 5px; transition: 0.3s; }
+        .nav-links a:hover, .nav-links a.active { color: #fff; background-color: #3a3a5c; }
+        
+        .dashboard { display: flex; width: 95%; max-width: 1600px; margin: 30px auto; gap: 20px; }
+        
+        .canvas-section { flex: 7; background-color: #000; border: 4px solid #3a3a5c; border-radius: 10px; overflow: hidden; position: relative;}
+        canvas { max-width: 100%; height: auto; cursor: crosshair; display: block; }
+        
+        .tools-section { flex: 3; background: #2a2a40; border-radius: 10px; border: 4px solid #3a3a5c; padding: 20px; display: flex; flex-direction: column; }
+        .tools-section h2 { margin-top: 0; border-bottom: 2px solid #4a4a6c; padding-bottom: 10px; font-size: 18px;}
+        
+        .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
+        button { background-color: #3a3a5c; color: white; border: none; padding: 12px; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: bold; transition: 0.2s; }
+        button:hover { background-color: #4a4a6c; }
+        .btn-primary { background-color: #00b894; grid-column: span 2; font-size: 16px;}
+        .btn-primary:hover { background-color: #00cec9; }
+        .btn-danger { background-color: #ff4757; }
+        .btn-danger:hover { background-color: #ff6b81; }
+
+        .keyboard-shortcuts { font-size: 12px; color: #888; margin-bottom: 20px; background: #1e1e2f; padding: 10px; border-radius: 5px; }
+        
+        .lane-list { background: #1e1e2f; border-radius: 5px; padding: 10px; flex-grow: 1; overflow-y: auto; border: 2px solid #3a3a5c;}
+        .lane-item { background: #3a3a5c; padding: 10px; margin-bottom: 10px; border-radius: 5px; display: flex; justify-content: space-between; align-items: center; }
+        .lane-item span { font-weight: bold; color: #00ff00; }
+        .lane-actions button { padding: 5px 10px; margin-left: 5px; font-size: 12px; }
+        .btn-edit { background-color: #f1c40f; color: #000; }
+        .btn-edit:hover { background-color: #f39c12; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1>Seer-Vehicle Crowded Boarding System</h1>
+        <div class="nav-links">
+            <a href="/">Live Stream</a>
+            <a href="/database">Violation Database</a>
+            <a href="/laner" class="active">Lane Builder</a>
+        </div>
+    </div>
+
+    <div class="dashboard">
+        <div class="canvas-section">
+            <canvas id="laneCanvas"></canvas>
+        </div>
+
+        <div class="tools-section">
+            <h2>Drawing Tools</h2>
+            
+            <div class="keyboard-shortcuts">
+                <strong>Shortcuts:</strong> Click (Add), U (Undo), I (Redo), N (Finish Shape)
+            </div>
+
+            <div class="btn-grid">
+                <button onclick="undoPoint()">Undo Point (u)</button>
+                <button onclick="redoPoint()">Redo Point (i)</button>
+                <button onclick="finishShape()" style="grid-column: span 2; background-color: #2e86de;">Finish Shape (n)</button>
+            </div>
+
+            <h2>Lane Manager</h2>
+            <div class="lane-list" id="laneListManager">
+                </div>
+
+            <div class="btn-grid" style="margin-top: 20px;">
+                <button onclick="resetAll()" class="btn-danger">Clear All Lanes</button>
+                <button onclick="saveToSystem()" class="btn-primary">💾 Save & Apply to Live Stream</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('laneCanvas');
+        const ctx = canvas.getContext('2d');
+        const laneListManager = document.getElementById('laneListManager');
+
+        let allLanes = [];
+        let currentLanePoints = [];
+        let redoStack = [];
+        let editingIndex = -1; // Tracks which lane we are currently editing
+
+        fetch('/api/lanes')
+            .then(res => res.json())
+            .then(data => {
+                if(data.lanes) {
+                    allLanes = data.lanes;
+                    updateLaneManager();
+                }
+            });
+
+        // 2. Load Background Image
+        const bgImage = new Image();
+        bgImage.src = "/api/reference_frame";
+        bgImage.onload = function() {
+            canvas.width = bgImage.naturalWidth;
+            canvas.height = bgImage.naturalHeight;
+            drawRefresh();
+        };
+
+        canvas.addEventListener('mousedown', function(e) {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            
+            const x = Math.round((e.clientX - rect.left) * scaleX);
+            const y = Math.round((e.clientY - rect.top) * scaleY);
+
+            currentLanePoints.push([x, y]);
+            redoStack = []; 
+            drawRefresh();
+        });
+
+        function drawRefresh() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(bgImage, 0, 0, canvas.width, canvas.height);
+
+            // Draw Completed Lanes
+            ctx.lineWidth = 2;
+            ctx.font = "20px Arial";
+            allLanes.forEach((lane, index) => {
+                if (!lane) return; // Skip the lane we are actively editing
+                
+                ctx.strokeStyle = '#00ff00';
+                ctx.fillStyle = '#00ff00';
+                ctx.beginPath();
+                ctx.moveTo(lane[0][0], lane[0][1]);
+                for (let j = 1; j < lane.length; j++) ctx.lineTo(lane[j][0], lane[j][1]);
+                ctx.closePath();
+                ctx.stroke();
+                ctx.fillText(`Lane ${index + 1}`, lane[0][0], lane[0][1] - 10);
+            });
+
+            // Draw Current Lane (Red)
+            if (currentLanePoints.length > 0) {
+                ctx.strokeStyle = '#ff0000';
+                ctx.fillStyle = '#ff0000';
+                
+                currentLanePoints.forEach(pt => {
+                    ctx.beginPath();
+                    ctx.arc(pt[0], pt[1], 4, 0, Math.PI * 2);
+                    ctx.fill();
+                });
+
+                if (currentLanePoints.length >= 2) {
+                    ctx.beginPath();
+                    ctx.moveTo(currentLanePoints[0][0], currentLanePoints[0][1]);
+                    for (let j = 1; j < currentLanePoints.length; j++) {
+                        ctx.lineTo(currentLanePoints[j][0], currentLanePoints[j][1]);
+                    }
+                    ctx.closePath();
+                    ctx.stroke();
+                }
+            }
+        }
+
+        // --- Core Functions ---
+
+        function undoPoint() {
+            if (currentLanePoints.length > 0) {
+                redoStack.push(currentLanePoints.pop());
+                drawRefresh();
+            }
+        }
+
+        function redoPoint() {
+            if (redoStack.length > 0) {
+                currentLanePoints.push(redoStack.pop());
+                drawRefresh();
+            }
+        }
+
+        function finishShape() {
+            if (currentLanePoints.length >= 3) {
+                if (editingIndex !== -1) {
+                    // Put it back exactly where it was
+                    allLanes[editingIndex] = [...currentLanePoints];
+                    editingIndex = -1;
+                } else {
+                    // It's a brand new lane, put it at the end
+                    allLanes.push([...currentLanePoints]);
+                }
+                currentLanePoints = [];
+                redoStack = [];
+                drawRefresh();
+                updateLaneManager();
+            } else {
+                alert("A lane needs at least 3 points!");
+            }
+        }
+
+        // --- Lane Management Functions ---
+
+        function updateLaneManager() {
+            laneListManager.innerHTML = "";
+            allLanes.forEach((lane, index) => {
+                const div = document.createElement("div");
+                div.className = "lane-item";
+                
+                if (!lane) {
+                    // Highlight the lane currently being edited
+                    div.style.backgroundColor = "#f39c12"; 
+                    div.innerHTML = `<span style="color: #000;">Lane ${index + 1} (Editing...)</span>`;
+                } else {
+                    div.innerHTML = `
+                        <span>Lane ${index + 1}</span>
+                        <div class="lane-actions">
+                            <button class="btn-edit" onclick="editLane(${index})">Edit</button>
+                            <button class="btn-danger" onclick="deleteLane(${index})">Delete</button>
+                        </div>
+                    `;
+                }
+                laneListManager.appendChild(div);
+            });
+        }
+
+        function editLane(index) {
+            if(currentLanePoints.length > 0 || editingIndex !== -1) {
+                alert("Finish your current shape first!");
+                return;
+            }
+            editingIndex = index;
+            currentLanePoints = [...allLanes[index]];
+            // Leave a placeholder so the other lanes don't shift down
+            allLanes[index] = null; 
+            updateLaneManager();
+            drawRefresh();
+        }
+
+        function deleteLane(index) {
+            if(editingIndex !== -1) {
+                alert("Finish editing your shape before deleting others.");
+                return;
+            }
+            allLanes.splice(index, 1);
+            updateLaneManager();
+            drawRefresh();
+        }
+
+        function resetAll() {
+            if(confirm("Clear all lanes?")) {
+                allLanes = [];
+                currentLanePoints = [];
+                redoStack = [];
+                editingIndex = -1;
+                updateLaneManager();
+                drawRefresh();
+            }
+        }
+
+        // --- System Saving ---
+
+        function saveToSystem() {
+            if(currentLanePoints.length > 0 || editingIndex !== -1) {
+                alert("You have an unfinished shape. Press 'N' to finish it before saving.");
+                return;
+            }
+            fetch('/api/lanes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ lanes: allLanes })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if(data.success) {
+                    alert("✅ Lanes successfully saved and applied to the Live Stream!");
+                }
+            });
+        }
+
+        window.addEventListener('keydown', function(e) {
+            if(e.target.tagName === 'INPUT') return; 
+            const key = e.key.toLowerCase();
+            if (key === 'u') undoPoint();
+            if (key === 'i') redoPoint();
+            if (key === 'n') finishShape();
+        });
+    </script>
+</body>
+</html>

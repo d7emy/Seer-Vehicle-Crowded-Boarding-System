@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Violation Details</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; background-color: #1e1e2f; color: #ffffff; padding: 40px; }
+        .container { max-width: 900px; margin: 0 auto; background: #2a2a40; padding: 30px; border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        h1 { color: #ff4757; border-bottom: 2px solid #3a3a5c; padding-bottom: 15px; }
+        img { width: 100%; max-width: 800px; border-radius: 8px; margin-top: 20px; border: 3px solid #3a3a5c; }
+        .details-box { background: #1e1e2f; padding: 20px; border-radius: 8px; margin-top: 20px; }
+        .details-box p { margin: 10px 0; font-size: 18px; }
+        .details-box strong { color: #888; display: inline-block; width: 150px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Violation Record</h1>
+        
+        <div class="details-box">
+            {% for key, value in info.items() %}
+                <p><strong>{{ key }}:</strong> {{ value }}</p>
+            {% endfor %}
+        </div>
+
+        <h3>Snapshot Evidence</h3>
+        <img src="/violations/images/{{ img_file }}" alt="Violation Snapshot">
+    </div>
+</body>
+</html>
