@@ -13,9 +13,8 @@ from violation_engine import ViolationEngine
 
 app = Flask(__name__)
 
-# Change this to 0 for a local webcam, or your RTSP link for an IP camera
 VIDEO_PATH = 'Riyadh metro 1.MOV' 
-FPS = 30
+FPS = 30#must change when input chaneged
 
 violation_queue = queue.Queue()
 clients = []
@@ -29,13 +28,11 @@ storage = StorageManager(on_new_violation_callback=handle_new_violation)
 tracker = VisionTracker(fps=FPS)
 engine = ViolationEngine(storage)
 
-# Global states for our producer-consumer pipeline
 raw_frame = None
 processed_frame_bytes = None
 lock = threading.Lock()
 
 def camera_reader():
-    """PRODUCER: Reads frames from the camera. Throttled to simulate real-time."""
     global raw_frame
     cap = cv2.VideoCapture(VIDEO_PATH)
     frame_delay = 1.0 / FPS
@@ -48,10 +45,9 @@ def camera_reader():
             with lock:
                 raw_frame = frame
         else:
-            # The video ended! Loop it and RESET our databases for testing
             cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-            storage.saved_snaps.clear()  # Allow violations to trigger again
-            tracker.uuid_map.clear()     # Reset vehicle UUIDs
+            storage.saved_snaps.clear()  
+            tracker.uuid_map.clear()   
             continue
         
         read_time = time.time() - start_time
@@ -60,20 +56,16 @@ def camera_reader():
             time.sleep(time_to_sleep - (time_to_sleep * 0.3))
 
 def ai_processor():
-    """CONSUMER: Grabs the freshest frame, runs AI, and drops skipped frames."""
     global raw_frame, processed_frame_bytes
     
     while True:
         with lock:
-            # Copy the frame so the camera reader can keep updating the original
             frame = raw_frame.copy() if raw_frame is not None else None
             
         if frame is None:
             time.sleep(0.01)
             continue
             
-        # Use actual system time. This is critical for live cameras so your 
-        # VisionTracker speed calculation (Distance / Time) remains accurate!
         current_time = time.time()
         
         tracked_objects = tracker.track_and_get_speeds(frame, current_time)
@@ -84,12 +76,10 @@ def ai_processor():
             with lock:
                 processed_frame_bytes = buffer.tobytes()
 
-# Start the decoupled threads
 threading.Thread(target=camera_reader, daemon=True).start()
 threading.Thread(target=ai_processor, daemon=True).start()
 
 def generate_frames():
-    """STREAMER: Yields the latest processed frame instantly to the web browser."""
     last_sent = None
     while True:
         with lock:
@@ -103,7 +93,6 @@ def generate_frames():
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
 
-# --- FLASK ROUTES ---
 
 @app.route('/')
 def index():
@@ -124,11 +113,9 @@ def stream_violations():
         try:
             while True:
                 try:
-                    # Wait up to 2 seconds for a violation
                     violation = client_queue.get(timeout=2.0) 
                     yield f"data: {json.dumps(violation)}\n\n"
                 except queue.Empty:
-                    # Send a hidden comment to keep the browser connection alive
                     yield ": keep-alive\n\n"
         finally:
             with clients_lock:
@@ -138,7 +125,6 @@ def stream_violations():
     return Response(event_stream(), mimetype="text/event-stream")
 
 def get_all_violations():
-    """Reads all violation records and sorts them strictly by the Timestamp key in the txt info."""
     violations_list = []
     if os.path.exists(storage.IMG_DIR):
         for filename in os.listdir(storage.IMG_DIR):
@@ -155,24 +141,19 @@ def get_all_violations():
                 except Exception as e:
                     print(f"Error reading {filename}: {e}")
                     
-    # --- SORT BY THE 'Timestamp' KEY FROM THE TXT FILE ---
     def sort_by_txt_timestamp(v):
         time_str = v.get('Timestamp', '')
         try:
-            # Matches the format saved in storage_manager.py: "%Y-%m-%d %I:%M:%S %p"
             
             return datetime.strptime(time_str, "%Y-%m-%d %I:%M:%S %p")
         except ValueError:
-            # If the timestamp is missing or corrupted, push this record to the bottom
             return datetime.min
 
-    # Sort descending (newest first)
     violations_list.sort(key=sort_by_txt_timestamp, reverse=True)
     return violations_list
 
 @app.route('/delete_violations', methods=['POST'])
 def delete_violations():
-    """Receives a list of filenames from the frontend and deletes the .txt and .jpg files."""
     data = request.get_json()
     filenames = data.get('filenames', [])
     
@@ -221,19 +202,16 @@ def manage_lanes():
     config_file = "lanes_config.json"
     
     if request.method == 'POST':
-        # Web UI is saving new lanes
         data = request.get_json()
         lanes = data.get('lanes', [])
         
         with open(config_file, 'w') as f:
             json.dump(lanes, f)
             
-        # THE MAGIC: Tell the engine to reload the file instantly!
         engine.load_lanes()
         return jsonify({"success": True, "message": "Lanes saved and applied dynamically."})
         
     else:
-        # Web UI is requesting the current lanes to display them
         if os.path.exists(config_file):
             try:
                 with open(config_file, 'r') as f:
@@ -243,7 +221,6 @@ def manage_lanes():
         return jsonify({"lanes": []})
 @app.route('/api/reference_frame')
 def reference_frame():
-    """Grabs a single frame from the video to use as the drawing background."""
     cap = cv2.VideoCapture(VIDEO_PATH)
     success, frame = cap.read()
     cap.release()
@@ -253,5 +230,4 @@ def reference_frame():
         return Response(buffer.tobytes(), mimetype='image/jpeg')
     return "Failed to load video", 500
 if __name__ == "__main__":
-    # We turn off the reloader to prevent the background threads from starting twice
     app.run(host='0.0.0.0', port=5000, debug=True, threaded=True, use_reloader=False)

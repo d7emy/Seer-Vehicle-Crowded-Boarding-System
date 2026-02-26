@@ -63,12 +63,11 @@ class ViolationEngine:
     def process_and_draw(self, frame, tracked_objects, current_time):
         h, w = frame.shape[:2]
         
-        # Will re-initialize automatically if lanes were updated from the web UI
         if not self.masks_initialized:
             self._init_masks(h, w)
 
         for i, lane in enumerate(self.all_lanes):
-            if len(lane) >= 3: # Safety check
+            if len(lane) >= 2: 
                 cv2.polylines(frame, [lane], isClosed=True, color=(255, 255, 0), thickness=2)
                 cv2.putText(frame, f"Lane {i+1}", tuple(lane[0]), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
 
@@ -157,7 +156,6 @@ class ViolationEngine:
                 color, label = (100, 100, 100), f"EXITED | {speed_str}"
 
             cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-            # Display ID up to 8 chars
             short_id = str(track_id)[:8] if track_id else ""
             cv2.putText(frame, f"{label} ID:{short_id}", (x1, max(15, y1 - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 

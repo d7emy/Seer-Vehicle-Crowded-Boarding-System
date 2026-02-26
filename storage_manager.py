@@ -35,17 +35,14 @@ class StorageManager:
 
         cv2.putText(overlay, text, (20, 45), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
 
-        # Generate base filename
         safe_name = violation_type.replace("/", "-").replace(" ", "_")
         base_filename = f"{safe_name}_id{track_id}_{now_dt.strftime('%Y%m%d_%H%M%S')}"
         
         img_path = os.path.join(self.IMG_DIR, f"{base_filename}.jpg")
         txt_path = os.path.join(self.IMG_DIR, f"{base_filename}.txt")
 
-        # 1. Save Image
         cv2.imwrite(img_path, overlay)
 
-        # 2. Save TXT file
         with open(txt_path, "w", encoding="utf-8") as f:
             f.write(f"Violation Type: {violation_type}\n")
             f.write(f"Vehicle ID: {track_id}\n")
@@ -55,7 +52,6 @@ class StorageManager:
             
         print(f"[ALERT] Saved: {violation_type} by Vehicle ID {track_id}")
 
-        # 3. Alert the Flask app so it updates the HTML list dynamically
         if self.on_new_violation:
             violation_data = {
                 "id": track_id,
@@ -66,4 +62,4 @@ class StorageManager:
             self.on_new_violation(violation_data)
 
     def close(self):
-        pass # No database to close anymore!
+        pass
