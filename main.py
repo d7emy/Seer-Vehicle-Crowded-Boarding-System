@@ -1,4 +1,5 @@
 import os
+import base64
 import cv2
 import threading
 import time
@@ -13,8 +14,8 @@ from violation_engine import ViolationEngine
 
 app = Flask(__name__)
 
-VIDEO_PATH = 'Riyadh metro 1.MOV' 
-FPS = 30#must change when input chaneged
+VIDEO_PATH =0
+FPS = 15#must change when input chaneged
 
 violation_queue = queue.Queue()
 clients = []
@@ -172,6 +173,34 @@ def delete_violations():
             print(f"Error deleting {base_name}: {e}")
             
     return jsonify({"success": True, "deleted": deleted_count})
+@app.route('/leader')
+def leader_board():
+    """Serves the Fullscreen Leader Board."""
+    return render_template('leader.html')
+
+@app.route('/stream_leader')
+def stream_leader():
+    """Streams the cropped image and timer of the L1 leader."""
+    def event_stream():
+        while True:
+            time.sleep(0.1) # Update at roughly 10 FPS
+            data = engine.leader_display_data
+            if data["active"] and data["crop"] is not None:
+                # Encode the cropped numpy array to base64 jpeg
+                ret, buffer = cv2.imencode('.jpg', data["crop"])
+                if ret:
+                    b64_img = base64.b64encode(buffer).decode('utf-8')
+                    payload = {
+                        "active": True,
+                        "timer": round(data["timer"], 1),
+                        "limit": engine.DWELL_LIMIT_SEC,
+                        "image": b64_img
+                    }
+                    yield f"data: {json.dumps(payload)}\n\n"
+            else:
+                yield f"data: {json.dumps({'active': False})}\n\n"
+                
+    return Response(event_stream(), mimetype="text/event-stream")
 @app.route('/violation/<base_filename>')
 def violation_detail(base_filename):
     txt_path = os.path.join(storage.IMG_DIR, f"{base_filename}.txt")
@@ -230,4 +259,4 @@ def reference_frame():
         return Response(buffer.tobytes(), mimetype='image/jpeg')
     return "Failed to load video", 500
 if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=5000, debug=True, threaded=True, use_reloader=False)
+    app.run(host='0.0.0.0', port=50000, debug=True, threaded=True, use_reloader=False)

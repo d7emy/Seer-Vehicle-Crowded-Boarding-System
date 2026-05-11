@@ -6,7 +6,7 @@ import os
 class ViolationEngine:
     def __init__(self, storage_manager):
         self.storage = storage_manager
-        
+        self.leader_display_data = {"active": False, "timer": 0.0, "crop": None}
         # New: Read lanes from a JSON configuration file
         self.config_file = "lanes_config.json"
         self.all_lanes = []
@@ -61,6 +61,7 @@ class ViolationEngine:
         self.masks_initialized = True
 
     def process_and_draw(self, frame, tracked_objects, current_time):
+        self.leader_display_data["active"] = False
         h, w = frame.shape[:2]
         
         if not self.masks_initialized:
@@ -127,33 +128,43 @@ class ViolationEngine:
 
         for obj in tracked_objects:
             track_id, (x1, y1, x2, y2), speed, lane_idx = obj["id"], obj["bbox"], obj["speed"], obj["current_lane"]
-            speed_str = f"{speed:.0f}km/h"
-            color, label = (0, 255, 255), f"NO LANE | {speed_str}"
+            conf = obj.get("conf", 0.0)
+            info_str = f"{speed:.0f}km/h | {conf:.2f}"
+            color, label = (0, 255, 255), f"NO LANE | {info_str}"
 
             if lane_idx is not None:
                 lane_num = lane_idx + 1
                 is_l1_leader = (lane_idx == 0) and (self.lane_leader[0]["id"] == track_id)
 
                 if track_id in self.lane_change_violators:
-                    color, label = (0, 0, 255), f"LANE VIOLATOR | {speed_str}"
+                    color, label = (0, 0, 255), f"LANE VIOLATOR | {info_str}"
                 elif track_id in self.stopped_violators:
-                    color, label = (0, 0, 255), f"ILLEGAL STOP L{lane_num} | {speed_str}"
+                    color, label = (0, 0, 255), f"ILLEGAL STOP L{lane_num} | {info_str}"
                 elif is_l1_leader and self.lane_leader[0]["start_time"] is not None:
                     elapsed = current_time - self.lane_leader[0]["start_time"]
+                    
+                    h_f, w_f = frame.shape[:2]
+                    cy1, cy2 = max(0, y1), min(h_f, y2)
+                    cx1, cx2 = max(0, x1), min(w_f, x2)
+                    if cy2 > cy1 and cx2 > cx1:
+                        self.leader_display_data["crop"] = frame[cy1:cy2, cx1:cx2].copy()
+                    self.leader_display_data["timer"] = elapsed
+                    self.leader_display_data["active"] = True
+
                     if elapsed > self.DWELL_LIMIT_SEC:
-                        color, label = (0, 0, 255), f"L1 DWELL VIOLATOR | {speed_str}"
+                        color, label = (0, 0, 255), f"L1 DWELL VIOLATOR | {info_str}"
                         if track_id not in self.snapped_l1_dwell:
                             self.snapped_l1_dwell.add(track_id)
                             self.storage.save_snapshot(frame, track_id, "EXCESSIVE WAITING TIME", 1, (x1, y1, x2, y2))
                     else:
                         color = (0, 255, 0)
                         time_left = max(0, self.DWELL_LIMIT_SEC - elapsed)
-                        label = f"L1 LEADER (Timer: {time_left:.1f}s) | {speed_str}"
+                        label = f"L1 LEADER (Timer: {time_left:.1f}s) | {info_str}"
                 else:
                     color = (0, 255, 255)
-                    label = f"L{lane_num} NORMAL | {speed_str}"
+                    label = f"L{lane_num} NORMAL | {info_str}"
             elif track_id in self.cars_entered:
-                color, label = (100, 100, 100), f"EXITED | {speed_str}"
+                color, label = (100, 100, 100), f"EXITED | {info_str}"
 
             cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
             short_id = str(track_id)[:8] if track_id else ""

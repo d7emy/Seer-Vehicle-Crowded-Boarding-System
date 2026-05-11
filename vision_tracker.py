@@ -7,7 +7,7 @@ from collections import defaultdict, deque
 
 class VisionTracker:
     def __init__(self, model_path='yolov8x.pt', fps=30):
-        self.model = YOLO(model_path).to('cuda')
+        self.model = YOLO(model_path)
         self.FPS = fps
         self.car_history = defaultdict(lambda: deque(maxlen=self.FPS))
         
@@ -26,8 +26,9 @@ class VisionTracker:
 
         boxes = results[0].boxes.xyxy.cpu().numpy()
         track_ids = results[0].boxes.id.int().cpu().tolist()
+        confidences = results[0].boxes.conf.cpu().tolist()
 
-        for box, yolo_id in zip(boxes, track_ids):
+        for box, yolo_id, conf in zip(boxes, track_ids, confidences):
             if yolo_id not in self.uuid_map:
                 self.uuid_map[yolo_id] = str(uuid.uuid4())
             
@@ -52,7 +53,7 @@ class VisionTracker:
                     speed_kmh = (dist / t_diff) * 3.6
 
             tracked_objects.append({
-                "id": vehicle_uuid, "bbox": (x1, y1, x2, y2), "cy": cy, "speed": speed_kmh
+                "id": vehicle_uuid, "bbox": (x1, y1, x2, y2), "cy": cy, "speed": speed_kmh, "conf": conf
             })
 
         return tracked_objects

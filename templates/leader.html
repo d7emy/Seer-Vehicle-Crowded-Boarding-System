@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>L1 Leader Tracker</title>
+    <style>
+        body { 
+            margin: 0; 
+            background-color: #0d0d12; /* Deep black/blue */
+            color: #ffffff; 
+            display: flex; 
+            flex-direction: column; 
+            height: 100vh; 
+            justify-content: center; 
+            align-items: center; 
+            font-family: 'Segoe UI', Tahoma, sans-serif; 
+            overflow: hidden;
+        }
+        #status { font-size: 2vw; color: #555; text-transform: uppercase; letter-spacing: 2px; }
+        
+        #timer { 
+            font-size: 10vw; 
+            font-weight: bold; 
+            font-family: monospace; 
+            color: #00b894; /* Default Green */
+            text-shadow: 0 0 20px rgba(0, 184, 148, 0.4);
+            display: none; 
+            margin-bottom: 20px;
+            transition: color 0.3s;
+        }
+        #timer.violation {
+            color: #ff4757; /* Danger Red */
+            text-shadow: 0 0 30px rgba(255, 71, 87, 0.6);
+        }
+
+        #car-img { 
+            max-height: 55vh; 
+            max-width: 90vw; 
+            border: 6px solid #3a3a5c; 
+            border-radius: 12px; 
+            display: none; 
+            box-shadow: 0 20px 50px rgba(0,0,0,0.8);
+            object-fit: contain;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="status">Waiting for Leader Car in Lane 1...</div>
+    <div id="timer">0.0s</div>
+    <img id="car-img" src="" alt="Leader Car">
+
+    <script>
+        const statusDiv = document.getElementById("status");
+        const timerDiv = document.getElementById("timer");
+        const carImg = document.getElementById("car-img");
+        
+        const eventSource = new EventSource("/stream_leader");
+        
+        eventSource.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            
+            if (data.active) {
+                statusDiv.style.display = "none";
+                timerDiv.style.display = "block";
+                carImg.style.display = "block";
+                
+                // Update Timer Text
+                timerDiv.innerText = data.timer.toFixed(1) + "s";
+                
+                // Update Image (using base64 data stream)
+                carImg.src = "data:image/jpeg;base64," + data.image;
+
+                // Change color if over limit
+                if (data.timer > data.limit) {
+                    timerDiv.classList.add("violation");
+                    carImg.style.borderColor = "#ff4757";
+                } else {
+                    timerDiv.classList.remove("violation");
+                    carImg.style.borderColor = "#00b894";
+                }
+            } else {
+                statusDiv.style.display = "block";
+                timerDiv.style.display = "none";
+                carImg.style.display = "none";
+            }
+        };
+    </script>
+</body>
+</html>
